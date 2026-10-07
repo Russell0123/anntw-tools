@@ -472,11 +472,15 @@ function init() {
   $('#newsDate').value = todayTW();
   $('#newsDate').addEventListener('change', () => loadNews().then(updateAiHint));
   $('#btnReload').addEventListener('click', reloadAll);
-  $('#btnFetch').addEventListener('click', async () => {
+  $('#btnFetch').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true; // 避免連按觸發兩次抓取
     try {
       await state.store.dispatch('fetch.yml');
       toast('已開始抓取，約 1～2 分鐘後按「重新整理」', 5000);
+      setTimeout(() => { btn.disabled = false; }, 120000);
     } catch (err) {
+      btn.disabled = false;
       toast(`無法啟動抓取：${err.message}`, 6000);
     }
   });
