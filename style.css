@@ -100,7 +100,14 @@ main:has(#tab-news:not([hidden])) { max-width: 1600px; }
 .card.isDone { opacity: .6; }
 .card.isDone:hover { opacity: 1; }
 .card .preview { position: relative; background: #111; }
-.card .preview img { display: block; width: 100%; height: auto; }
+.card .preview img { display: block; width: 100%; height: auto; cursor: zoom-in; }
+
+/* 點圖卡放大預覽，點旁邊空白處收回 */
+#lightbox {
+  position: fixed; inset: 0; z-index: 30; display: grid; place-items: center;
+  padding: 24px; background: rgba(0,0,0,.82); cursor: zoom-out;
+}
+#lightbox img { max-width: calc(100vw - 48px); max-height: calc(100vh - 48px); object-fit: contain; cursor: default; box-shadow: 0 8px 40px rgba(0,0,0,.5); }
 .corner-l { position: absolute; top: 6px; left: 6px; }
 .corner-r { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; }
 .badge {

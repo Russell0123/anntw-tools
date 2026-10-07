@@ -58,6 +58,16 @@ function loadImage(src) {
   });
 }
 
+function openLightbox(src) {
+  const box = $('#lightbox');
+  $('img', box).src = src;
+  box.hidden = false;
+}
+
+function closeLightbox() {
+  $('#lightbox').hidden = true;
+}
+
 function showTab(name) {
   $$('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
   $$('.tab').forEach((t) => { t.hidden = t.id !== `tab-${name}`; });
@@ -262,6 +272,8 @@ function renderCard(item, date) {
     }
     redraw();
   })();
+
+  $('.preview img', el).addEventListener('click', (e) => openLightbox(e.currentTarget.src));
 
   $('.edit', el).addEventListener('click', () => {
     const ed = $('.editor', el);
@@ -576,6 +588,9 @@ function init() {
   $$('.tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
   $('#newsDate').value = todayTW();
   $('#newsDate').addEventListener('change', () => loadNews().then(updateAiHint));
+  // 大圖預覽：點圖片以外的地方或按 Esc 收回
+  $('#lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') closeLightbox(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeLightbox(); });
   $('#btnReload').addEventListener('click', () => reloadAll());
   $('#btnFetch').addEventListener('click', runFetch);
   $('#btnPackage').addEventListener('click', makePackage);
