@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>醒報小編工具</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@500;900&family=Noto+Serif+TC:wght@400;700;900&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>醒報小編工具</h1>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="news" aria-selected="true">新聞圖卡</button>
+      <button role="tab" data-tab="editorial">我見我思校稿</button>
+      <button role="tab" data-tab="settings">設定</button>
+    </nav>
+  </header>
+
+  <main>
+    <section class="bar" id="statusBar">
+      <span id="fetchStatus" class="muted">讀取中…</span>
+      <button id="btnFetch" class="ghost">立即抓取新文章</button>
+      <button id="btnReload" class="ghost">重新整理</button>
+    </section>
+
+    <section class="bar ai">
+      <div>
+        <strong>AI 處理</strong>
+        <span class="muted" id="aiHint"></span>
+      </div>
+      <div class="row">
+        <button id="btnPackage">下載打包檔</button>
+        <label class="btn secondary">上傳交付檔<input type="file" id="fileDelivery" accept=".json,.txt,.md,application/json,text/plain" hidden></label>
+        <button id="btnPaste" class="ghost">貼上交付內容</button>
+      </div>
+      <div id="pasteBox" hidden>
+        <textarea id="pasteText" rows="5" placeholder="把 Claude 回的 JSON 整段貼上"></textarea>
+        <button id="btnPasteApply">匯入</button>
+      </div>
+    </section>
+
+    <section id="tab-news" class="tab">
+      <div class="row between">
+        <label>日期 <input type="date" id="newsDate"></label>
+        <span class="muted" id="newsCount"></span>
+      </div>
+      <div id="newsList" class="cards"></div>
+    </section>
+
+    <section id="tab-editorial" class="tab" hidden>
+      <div id="edList"></div>
+    </section>
+
+    <section id="tab-settings" class="tab" hidden>
+      <form id="settingsForm" class="panel">
+        <p class="muted">每台裝置（手機、電腦）第一次使用時要設定一次，資料只存在這台裝置的瀏覽器裡。</p>
+        <label>GitHub 帳號<input name="owner" required></label>
+        <label>資料 repo 名稱<input name="repo" required></label>
+        <label>GitHub Token<input name="token" type="password" autocomplete="off" required></label>
+        <div class="row">
+          <button type="submit">儲存並測試連線</button>
+          <span id="settingsMsg" class="muted"></span>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <template id="tplCard">
+    <article class="card">
+      <div class="preview"><img alt="圖卡預覽"><span class="badge"></span></div>
+      <div class="body">
+        <div class="meta"></div>
+        <div class="row">
+          <button class="dl">下載圖卡</button>
+          <label class="btn ghost">換圖片<input type="file" accept="image/*" class="swap" hidden></label>
+        </div>
+        <fieldset>
+          <legend>圖卡標題（原文標題）</legend>
+          <input class="t1" aria-label="第一行">
+          <input class="t2" aria-label="第二行">
+          <label class="inline">字級 <input type="range" class="sz" min="70" max="120" step="5"> <output></output></label>
+        </fieldset>
+        <fieldset>
+          <legend>社群標題 <button type="button" class="copy cpSocial">複製</button></legend>
+          <textarea class="social" rows="2"></textarea>
+        </fieldset>
+        <fieldset>
+          <legend>留言 <button type="button" class="copy cpComment">複製</button></legend>
+          <input class="comment">
+          <div class="link muted"></div>
+        </fieldset>
+        <div class="row between">
+          <span class="saveState muted"></span>
+          <button class="save secondary">儲存修改</button>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <template id="tplEd">
+    <article class="panel ed">
+      <header class="row between">
+        <h2></h2>
+        <span class="status"></span>
+      </header>
+      <div class="meta muted"></div>
+      <div class="msg"></div>
+      <div class="work" hidden>
+        <div class="warn"></div>
+        <h3>錯字回報 <span class="muted typoCount"></span></h3>
+        <ul class="typos"></ul>
+        <h3>關鍵字</h3>
+        <input class="tags">
+        <div class="tagWarn muted"></div>
+        <h3>內文 <button type="button" class="ghost togglePreview">切換預覽／編輯</button></h3>
+        <div class="bodyPreview"></div>
+        <textarea class="bodyEdit" rows="18" hidden></textarea>
+        <div class="row between">
+          <span class="muted">寫回後標題會改成：<b class="newTitle"></b></span>
+          <button class="approve">確認並寫回後台</button>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
