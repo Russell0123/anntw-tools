@@ -86,6 +86,19 @@ export class GitHubStore {
   async dispatch(workflow) {
     await this.req(`/actions/workflows/${workflow}/dispatches`, { method: 'POST', body: { ref: 'main' } });
   }
+
+  async listRuns(workflow) {
+    const j = await (await this.req(`/actions/workflows/${workflow}/runs?per_page=10`)).json();
+    return j.workflow_runs;
+  }
+
+  async getRun(id) {
+    return (await this.req(`/actions/runs/${id}`)).json();
+  }
+
+  async runJobs(id) {
+    return (await (await this.req(`/actions/runs/${id}/jobs`)).json()).jobs;
+  }
 }
 
 export class LocalStore {
@@ -129,7 +142,25 @@ export class LocalStore {
     return this.base + path;
   }
 
+  // 本機測試：模擬一個約 15 秒跑完的 GitHub Actions
   async dispatch(workflow) {
-    console.info('[local] dispatch', workflow);
+    this.fakeRun = { id: Date.now(), workflow, start: Date.now() + 2000 };
+  }
+
+  async listRuns(workflow) {
+    const r = this.fakeRun;
+    return r && r.workflow === workflow && Date.now() > r.start ? [await this.getRun(r.id)] : [];
+  }
+
+  async getRun(id) {
+    const t = (Date.now() - this.fakeRun.start) / 1000;
+    return { id, status: t < 2 ? 'queued' : t < 15 ? 'in_progress' : 'completed', conclusion: t < 15 ? null : 'success' };
+  }
+
+  async runJobs() {
+    const t = (Date.now() - this.fakeRun.start) / 1000 - 2;
+    const names = ['Set up job', 'Run actions/checkout@v5', 'Run actions/setup-python@v6', 'Run pip install -r requirements.txt', '抓取', '存檔', 'Complete job'];
+    const ends = [1, 2, 3, 5, 10, 12, 13];
+    return [{ steps: names.map((name, i) => ({ name, status: t >= ends[i] ? 'completed' : t >= (ends[i - 1] || 0) ? 'in_progress' : 'queued', conclusion: t >= ends[i] ? 'success' : null })) }];
   }
 }

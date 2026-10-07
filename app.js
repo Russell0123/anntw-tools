@@ -1,5 +1,6 @@
 import { GitHubStore, LocalStore } from './store.js';
 import { drawCard, canvasToBlob, defaultSplit } from './card.js';
+import { progress, trackRun } from './progress.js';
 import {
   buildPackage, parseDelivery, formatBody, checkPreserved, headingProblems,
   typoUsable, applyTypos, normTags, finalTitle,
@@ -128,12 +129,17 @@ function cardValues(d) {
   };
 }
 
-async function loadNews() {
+async function loadNews(onProgress = () => {}) {
   const date = $('#newsDate').value;
   const list = $('#newsList');
   list.innerHTML = '<p class="muted">讀取中…</p>';
   const files = (await state.store.list(`data/cards/${date}`)).filter((f) => f.name.endsWith('.json'));
-  const items = await Promise.all(files.map(async (f) => ({ path: f.path, ...(await state.store.getJSON(f.path)) })));
+  let loaded = 0;
+  const items = await Promise.all(files.map(async (f) => {
+    const item = { path: f.path, ...(await state.store.getJSON(f.path)) };
+    onProgress(++loaded, files.length);
+    return item;
+  }));
   state.news = items.filter((i) => i.data).sort((a, b) => b.data.published_at.localeCompare(a.data.published_at));
   list.innerHTML = '';
   $('#newsCount').textContent = `${state.news.length} 篇，${state.news.filter((n) => n.data.ai).length} 篇已有 AI 文案`;
@@ -216,6 +222,7 @@ function renderCard(item, date) {
   $('.save', el).addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     btn.disabled = true;
+    progress.start(`儲存修改：${d.title}`);
     try {
       const edit = {
         title_lines: lines(),
@@ -226,16 +233,20 @@ function renderCard(item, date) {
         saved_at: new Date().toISOString(),
       };
       if (pendingImage) {
+        progress.set(0.1, '上傳新圖片…', 0.6);
         edit.image = `${d.slug}.custom-${Date.now()}.jpg`; // 每次用新檔名，不用處理覆蓋
         await state.store.putBytes(`${dir}/${edit.image}`, pendingImage, undefined, `圖卡換圖 ${d.slug}`);
         pendingImage = null;
       }
+      progress.set(0.6, '儲存標題、文案…', 0.95);
       d.edit = edit;
       item.sha = await state.store.putJSON(item.path, d, item.sha, `圖卡修改 ${d.slug}`);
       $('.saveState', el).textContent = '已儲存';
       setBadge();
+      progress.done('已儲存');
     } catch (err) {
       $('.saveState', el).textContent = `儲存失敗：${err.message}（請按重新整理後再試）`;
+      progress.fail(`儲存失敗：${err.message}`);
     } finally {
       btn.disabled = false;
     }
@@ -301,11 +312,16 @@ function renderEd(item) {
   if (d.status === 'conflict' || d.status === 'error') {
     const b = Object.assign(document.createElement('button'), { className: 'secondary', textContent: '放棄這次結果，重新抓取這篇' });
     b.addEventListener('click', async () => {
-      d.status = 'refetch';
-      item.sha = await state.store.putJSON(item.path, d, item.sha, `重新抓取 ${d.slug}`);
-      await state.store.dispatch('fetch.yml').catch(() => {});
-      toast('已排入重新抓取，稍後按重新整理');
-      loadEditorial();
+      b.disabled = true;
+      progress.start('重新抓取：標記這篇…');
+      try {
+        d.status = 'refetch';
+        item.sha = await state.store.putJSON(item.path, d, item.sha, `重新抓取 ${d.slug}`);
+        await runFetch();
+      } catch (err) {
+        progress.fail(`重新抓取失敗：${err.message}`);
+        b.disabled = false;
+      }
     });
     msg.after(b);
   }
@@ -357,7 +373,9 @@ function renderEd(item) {
     const chosen = $$('input[type=checkbox]:checked', ul).map((c) => typos[Number(c.dataset.i)]);
     const btn = e.currentTarget;
     btn.disabled = true;
+    progress.start('寫回後台：儲存你確認的內容…');
     try {
+      const known = new Set((await state.store.listRuns('writeback.yml').catch(() => [])).map((r) => r.id));
       d.final = {
         title: finalTitle(d.title),
         body: formatBody(applyTypos(body.value, chosen)),
@@ -367,24 +385,18 @@ function renderEd(item) {
       d.status = 'approved';
       d.approved_at = new Date().toISOString();
       item.sha = await state.store.putJSON(item.path, d, item.sha, `核准寫回 ${d.slug}`);
-      toast('已送出，GitHub 約 1 分鐘內寫回後台', 5000);
-      setTimeout(loadEditorial, 800);
-      pollEditorial();
+      const ok = await trackRun(state.store, 'writeback.yml', known, '寫回後台');
+      progress.set(0.97, '讀取寫回結果…');
+      await loadEditorial();
+      const after = state.eds.find((i) => i.data.slug === d.slug)?.data;
+      if (ok && after?.status === 'done') progress.done('寫回完成，後台已核對內容一致');
+      else if (ok) progress.fail(`寫回沒有完成：${after?.message || ED_STATUS[after?.status] || '狀態未知'}`);
     } catch (err) {
       btn.disabled = false;
-      toast(`送出失敗：${err.message}`, 6000);
+      progress.fail(`送出失敗：${err.message}`);
     }
   });
   return el;
-}
-
-let pollTimer;
-function pollEditorial(tries = 12) {
-  clearTimeout(pollTimer);
-  pollTimer = setTimeout(async () => {
-    await loadEditorial();
-    if (tries > 1 && state.eds.some((i) => i.data.status === 'approved')) pollEditorial(tries - 1);
-  }, 20000);
 }
 
 // ---------- AI 打包／交付 ----------
@@ -422,8 +434,16 @@ async function importDelivery(text) {
   const date = d.package_id.slice(0, 10);
   const notes = [];
   let okNews = 0, okEd = 0;
+  const total = d.news.length + d.editorial.length;
+  let step = 0;
+  progress.start(`匯入交付檔：共 ${total} 篇`);
+  const tick = (what) => {
+    step++;
+    progress.set((step - 1) / (total + 1), `匯入第 ${step}/${total} 篇：${what}`, step / (total + 1));
+  };
 
   for (const n of d.news) {
+    tick(`新聞 ${n.slug}`);
     const path = `data/cards/${date}/${n.slug}.json`;
     const cur = await state.store.getJSON(path);
     if (!cur) { notes.push(`找不到新聞 ${n.slug}`); continue; }
@@ -439,6 +459,7 @@ async function importDelivery(text) {
   }
 
   for (const e of d.editorial) {
+    tick(`我見我思 ${e.slug}`);
     const path = `data/editorial/${e.slug}.json`;
     const cur = await state.store.getJSON(path);
     if (!cur) { notes.push(`找不到我見我思 ${e.slug}`); continue; }
@@ -450,19 +471,50 @@ async function importDelivery(text) {
     okEd++;
   }
 
-  toast(`已匯入 ${okNews} 篇新聞、${okEd} 篇我見我思${notes.length ? '。' + notes.join('；') : ''}`, notes.length ? 9000 : 4000);
   if (date !== $('#newsDate').value) $('#newsDate').value = date;
-  reloadAll();
+  await reloadAll({ label: '匯入完成，重新載入', silent: true });
+  progress.done(`已匯入 ${okNews} 篇新聞、${okEd} 篇我見我思`);
+  if (notes.length) toast(notes.join('；'), 9000);
+}
+
+// ---------- 抓取 ----------
+
+async function runFetch() {
+  const btn = $('#btnFetch');
+  btn.disabled = true; // 跑完前不能再按，避免重複抓取
+  progress.start('抓取新文章：送出請求…');
+  try {
+    const known = new Set((await state.store.listRuns('fetch.yml').catch(() => [])).map((r) => r.id));
+    await state.store.dispatch('fetch.yml');
+    if (await trackRun(state.store, 'fetch.yml', known, '抓取新文章')) {
+      await reloadAll({ label: '抓取完成，載入新文章', silent: true });
+      const st = await state.store.getJSON('data/status.json').catch(() => null);
+      const n = (st?.data.added_cards?.length || 0) + (st?.data.added_drafts?.length || 0);
+      progress.done(`抓取完成，新增 ${n} 篇`);
+    }
+  } catch (err) {
+    progress.fail(`無法啟動抓取：${err.message}`);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ---------- 啟動 ----------
 
-async function reloadAll() {
+/** silent：由其他流程呼叫時，接續原本的進度條，不在最後顯示「完成」 */
+async function reloadAll({ label = '重新整理', silent = false } = {}) {
   if (!state.store) return;
+  if (!silent) progress.start(`${label}：讀取抓取狀態…`);
+  else progress.set(0.96, `${label}…`, 0.99);
   try {
-    await Promise.all([loadStatus(), loadNews(), loadEditorial()]);
+    await loadStatus();
+    if (!silent) progress.set(0.1, `${label}：讀取新聞圖卡…`, 0.2);
+    await loadNews((i, n) => { if (!silent) progress.set(0.1 + 0.7 * (i / n), `${label}：讀取新聞 ${i}/${n}…`, 0.1 + 0.7 * ((i + 1) / n)); });
+    if (!silent) progress.set(0.8, `${label}：讀取我見我思…`, 0.95);
+    await loadEditorial();
+    if (!silent) progress.done(`${label}完成`);
   } catch (err) {
-    toast(`讀取失敗：${err.message}`, 6000);
+    progress.fail(`讀取失敗：${err.message}`);
   }
 }
 
@@ -471,19 +523,8 @@ function init() {
   $$('.tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
   $('#newsDate').value = todayTW();
   $('#newsDate').addEventListener('change', () => loadNews().then(updateAiHint));
-  $('#btnReload').addEventListener('click', reloadAll);
-  $('#btnFetch').addEventListener('click', async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true; // 避免連按觸發兩次抓取
-    try {
-      await state.store.dispatch('fetch.yml');
-      toast('已開始抓取，約 1～2 分鐘後按「重新整理」', 5000);
-      setTimeout(() => { btn.disabled = false; }, 120000);
-    } catch (err) {
-      btn.disabled = false;
-      toast(`無法啟動抓取：${err.message}`, 6000);
-    }
-  });
+  $('#btnReload').addEventListener('click', () => reloadAll());
+  $('#btnFetch').addEventListener('click', runFetch);
   $('#btnPackage').addEventListener('click', makePackage);
   $('#fileDelivery').addEventListener('change', async (e) => {
     const f = e.target.files[0];
