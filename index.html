@@ -52,6 +52,8 @@
         <span class="muted" id="newsCount"></span>
       </div>
       <div id="newsList" class="cards"></div>
+      <h2 id="doneHead" class="doneHead" hidden>已完成</h2>
+      <div id="newsDone" class="cards"></div>
     </section>
 
     <section id="tab-editorial" class="tab" hidden>
@@ -76,32 +78,43 @@
 
   <template id="tplCard">
     <article class="card">
-      <div class="preview"><img alt="圖卡預覽"><span class="badge"></span></div>
+      <div class="preview">
+        <img alt="圖卡預覽">
+        <span class="badge corner-l">待 AI</span>
+        <label class="doneBox corner-l" title="標記為已發布，移到「已完成」" hidden>
+          <input type="checkbox" class="doneChk" aria-label="已完成">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>
+        </label>
+        <div class="corner-r">
+          <button type="button" class="iconBtn dl" title="下載圖卡" aria-label="下載圖卡"></button>
+          <button type="button" class="iconBtn edit" title="編輯圖卡" aria-label="編輯圖卡"></button>
+        </div>
+      </div>
       <div class="body">
         <div class="meta"></div>
-        <div class="row">
-          <button class="dl">下載圖卡</button>
-          <label class="btn ghost">換圖片<input type="file" accept="image/*" class="swap" hidden></label>
-        </div>
-        <fieldset>
-          <legend>圖卡標題（原文標題）</legend>
+        <div class="editor" hidden>
+          <div class="fieldLabel">圖卡標題（原文標題）</div>
           <input class="t1" aria-label="第一行">
           <input class="t2" aria-label="第二行">
-          <label class="inline">字級 <input type="range" class="sz" min="70" max="120" step="5"> <output></output></label>
-        </fieldset>
-        <fieldset>
-          <legend>社群標題 <button type="button" class="copy cpSocial">複製</button></legend>
-          <textarea class="social" rows="2"></textarea>
-        </fieldset>
-        <fieldset>
-          <legend>留言 <button type="button" class="copy cpComment">複製</button></legend>
-          <input class="comment">
-          <div class="link muted"></div>
-        </fieldset>
-        <div class="row between">
-          <span class="saveState muted"></span>
-          <button class="save secondary">儲存修改</button>
+          <div class="frow">
+            <label class="inline">字級 <input type="range" class="sz" min="70" max="120" step="5"> <output></output></label>
+            <label class="iconBtn plain swapBtn" title="換圖片" aria-label="換圖片"><input type="file" accept="image/*" class="swap" hidden></label>
+          </div>
         </div>
+        <div class="fieldLabel">社群標題</div>
+        <div class="frow">
+          <textarea class="social" rows="2" aria-label="社群標題"></textarea>
+          <button type="button" class="iconBtn plain copy cpSocial" title="複製社群標題" aria-label="複製社群標題"></button>
+        </div>
+        <div class="fieldLabel">留言</div>
+        <div class="frow">
+          <div class="grow">
+            <input class="comment" aria-label="留言">
+            <div class="link muted"></div>
+          </div>
+          <button type="button" class="iconBtn plain copy cpComment" title="複製留言＋連結" aria-label="複製留言＋連結"></button>
+        </div>
+        <div class="saveState muted"></div>
       </div>
     </article>
   </template>

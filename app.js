@@ -129,10 +129,29 @@ function cardValues(d) {
   };
 }
 
+const ICON = {
+  download: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 19h16"/></svg>',
+  edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg>',
+  copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="1"/><path d="M16 8V4H4v12h4"/></svg>',
+  image: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="1"/><path d="M3 16l5-5 4 4 3-3 6 6"/></svg>',
+};
+
+/** 已完成的卡片放在最下面的「已完成」區 */
+function placeCard(item) {
+  $(item.data.done ? '#newsDone' : '#newsList').append(item.el);
+  const todo = state.news.filter((n) => !n.data.done).length;
+  const done = state.news.length - todo;
+  $('#newsCount').textContent = `${state.news.length} 篇：待發 ${todo}、已完成 ${done}，${state.news.filter((n) => n.data.ai).length} 篇已有 AI 文案`;
+  $('#doneHead').hidden = done === 0;
+  $('#doneHead').textContent = `已完成（${done}）`;
+}
+
 async function loadNews(onProgress = () => {}) {
   const date = $('#newsDate').value;
   const list = $('#newsList');
   list.innerHTML = '<p class="muted">讀取中…</p>';
+  $('#newsDone').innerHTML = '';
+  $('#doneHead').hidden = true;
   const files = (await state.store.list(`data/cards/${date}`)).filter((f) => f.name.endsWith('.json'));
   let loaded = 0;
   const items = await Promise.all(files.map(async (f) => {
@@ -142,9 +161,12 @@ async function loadNews(onProgress = () => {}) {
   }));
   state.news = items.filter((i) => i.data).sort((a, b) => b.data.published_at.localeCompare(a.data.published_at));
   list.innerHTML = '';
-  $('#newsCount').textContent = `${state.news.length} 篇，${state.news.filter((n) => n.data.ai).length} 篇已有 AI 文案`;
+  $('#newsCount').textContent = '';
   if (!state.news.length) list.innerHTML = '<p class="muted">這一天還沒有抓到已上稿的文章。</p>';
-  for (const item of state.news) list.append(renderCard(item, date));
+  for (const item of state.news) {
+    item.el = renderCard(item, date);
+    placeCard(item);
+  }
   updateAiHint();
 }
 
@@ -155,9 +177,14 @@ function renderCard(item, date) {
   const dir = item.path.slice(0, item.path.lastIndexOf('/'));
   const canvas = document.createElement('canvas');
   let image = null;
-  let pendingImage = null; // 換了但還沒存的圖片 bytes
+
+  $('.dl', el).innerHTML = ICON.download;
+  $('.edit', el).innerHTML = ICON.edit;
+  $$('.copy', el).forEach((b) => { b.innerHTML = ICON.copy; });
+  $('.swapBtn', el).insertAdjacentHTML('afterbegin', ICON.image);
 
   const t1 = $('.t1', el), t2 = $('.t2', el), sz = $('.sz', el), social = $('.social', el), comment = $('.comment', el);
+  const saveState = $('.saveState', el);
   t1.value = v.title_lines[0] || '';
   t2.value = v.title_lines[1] || '';
   sz.value = Math.round((v.scale?.[0] || 1) * 100);
@@ -165,13 +192,18 @@ function renderCard(item, date) {
   social.value = (v.social || []).join('\n');
   comment.value = v.comment || '';
   $('.link', el).textContent = d.url;
-  $('.meta', el).innerHTML = `${esc(d.category)}・${esc(d.author)}・上稿 ${fmtTime(d.published_at)}・<a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.slug)}</a>`;
-  const badge = $('.badge', el);
-  const setBadge = () => {
-    badge.textContent = d.edit ? '已修改' : d.ai ? 'AI 文案' : '待 AI';
-    badge.classList.toggle('ai', !!(d.ai || d.edit));
+  $('.meta', el).innerHTML = `${esc(d.category)}・${esc(d.author)}・${fmtTime(d.published_at)}・<a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.slug)}</a>`;
+
+  // 左上角：AI 處理前顯示「待 AI」，處理後變成「已完成」勾選框
+  const badge = $('.badge', el), doneBox = $('.doneBox', el), doneChk = $('.doneChk', el);
+  const setCorner = () => {
+    const ready = !!(d.ai || d.edit);
+    badge.hidden = ready;
+    doneBox.hidden = !ready;
+    doneChk.checked = !!d.done;
+    el.classList.toggle('isDone', !!d.done);
   };
-  setBadge();
+  setCorner();
 
   const lines = () => [t1.value, t2.value];
   const scale = () => { const s = Number(sz.value) / 100; return [s, s]; };
@@ -187,14 +219,41 @@ function renderCard(item, date) {
     });
     return drawing;
   };
-  let timer;
-  const dirty = () => {
-    $('.saveState', el).textContent = '有未儲存的修改';
-    clearTimeout(timer);
-    timer = setTimeout(redraw, 250);
+
+  // 修改後自動儲存（停止輸入 2 秒後），同一張卡一次只送一個請求
+  let saving = Promise.resolve();
+  const persist = (message) => {
+    saving = saving.catch(() => {}).then(async () => {
+      saveState.textContent = '儲存中…';
+      try {
+        item.sha = await state.store.putJSON(item.path, d, item.sha, `${message} ${d.slug}`);
+        saveState.textContent = '已儲存';
+      } catch (err) {
+        saveState.textContent = `儲存失敗：${err.message}（請按重新整理後再試）`;
+        throw err;
+      }
+    });
+    return saving;
   };
-  [t1, t2, sz].forEach((i) => i.addEventListener('input', () => { $('output', el).textContent = `${sz.value}%`; dirty(); }));
-  [social, comment].forEach((i) => i.addEventListener('input', () => { $('.saveState', el).textContent = '有未儲存的修改'; }));
+  const collectEdit = () => {
+    d.edit = {
+      ...(d.edit || {}),
+      title_lines: lines(),
+      social: social.value.split('\n').map((s) => s.trim()).filter(Boolean),
+      comment: comment.value.trim(),
+      scale: scale(),
+      saved_at: new Date().toISOString(),
+    };
+  };
+  let redrawTimer, saveTimer;
+  const changed = (needRedraw) => {
+    saveState.textContent = '有未儲存的修改';
+    if (needRedraw) { clearTimeout(redrawTimer); redrawTimer = setTimeout(redraw, 250); }
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => { collectEdit(); setCorner(); persist('圖卡修改').catch(() => {}); }, 2000);
+  };
+  [t1, t2, sz].forEach((i) => i.addEventListener('input', () => { $('output', el).textContent = `${sz.value}%`; changed(true); }));
+  [social, comment].forEach((i) => i.addEventListener('input', () => changed(false)));
 
   (async () => {
     const imgName = d.edit?.image || d.image;
@@ -204,12 +263,31 @@ function renderCard(item, date) {
     redraw();
   })();
 
+  $('.edit', el).addEventListener('click', () => {
+    const ed = $('.editor', el);
+    ed.hidden = !ed.hidden;
+    $('.edit', el).classList.toggle('on', !ed.hidden);
+  });
+
   $('.swap', el).addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    pendingImage = new Uint8Array(await file.arrayBuffer());
-    image = await loadImage(URL.createObjectURL(file));
-    dirty();
+    progress.start(`換圖片：${d.title}`);
+    try {
+      image = await loadImage(URL.createObjectURL(file));
+      redraw();
+      progress.set(0.1, '上傳新圖片…', 0.8);
+      const name = `${d.slug}.custom-${Date.now()}.jpg`; // 每次用新檔名，不用處理覆蓋
+      await state.store.putBytes(`${dir}/${name}`, new Uint8Array(await file.arrayBuffer()), undefined, `圖卡換圖 ${d.slug}`);
+      progress.set(0.8, '儲存設定…', 0.95);
+      collectEdit();
+      d.edit.image = name;
+      await persist('圖卡換圖');
+      progress.done('圖片已更換');
+    } catch (err) {
+      progress.fail(`換圖片失敗：${err.message}`);
+    }
+    e.target.value = '';
   });
 
   $('.dl', el).addEventListener('click', async () => {
@@ -219,37 +297,12 @@ function renderCard(item, date) {
   $('.cpSocial', el).addEventListener('click', () => copyText(social.value.trim()));
   $('.cpComment', el).addEventListener('click', () => copyText(`${comment.value.trim()}\n${d.url}`));
 
-  $('.save', el).addEventListener('click', async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true;
-    progress.start(`儲存修改：${d.title}`);
-    try {
-      const edit = {
-        title_lines: lines(),
-        social: social.value.split('\n').map((s) => s.trim()).filter(Boolean),
-        comment: comment.value.trim(),
-        scale: scale(),
-        image: d.edit?.image,
-        saved_at: new Date().toISOString(),
-      };
-      if (pendingImage) {
-        progress.set(0.1, '上傳新圖片…', 0.6);
-        edit.image = `${d.slug}.custom-${Date.now()}.jpg`; // 每次用新檔名，不用處理覆蓋
-        await state.store.putBytes(`${dir}/${edit.image}`, pendingImage, undefined, `圖卡換圖 ${d.slug}`);
-        pendingImage = null;
-      }
-      progress.set(0.6, '儲存標題、文案…', 0.95);
-      d.edit = edit;
-      item.sha = await state.store.putJSON(item.path, d, item.sha, `圖卡修改 ${d.slug}`);
-      $('.saveState', el).textContent = '已儲存';
-      setBadge();
-      progress.done('已儲存');
-    } catch (err) {
-      $('.saveState', el).textContent = `儲存失敗：${err.message}（請按重新整理後再試）`;
-      progress.fail(`儲存失敗：${err.message}`);
-    } finally {
-      btn.disabled = false;
-    }
+  doneChk.addEventListener('change', async () => {
+    d.done = doneChk.checked;
+    d.done_at = d.done ? new Date().toISOString() : undefined;
+    setCorner();
+    placeCard(item);
+    await persist(d.done ? '標記完成' : '取消完成').catch(() => {});
   });
 
   return el;

@@ -88,22 +88,56 @@ label.inline input { width: auto; flex: 1; }
   padding: 14px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 10px;
 }
 
-.cards { display: grid; gap: 14px; grid-template-columns: 1fr; margin-top: 10px; }
-@media (min-width: 860px) { .cards { grid-template-columns: 1fr 1fr; } }
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+/* 圖卡：手機 1 欄 → 平板 2 欄 → 筆電 3 欄 → 桌機 4 欄 */
+main:has(#tab-news:not([hidden])) { max-width: 1600px; }
+.cards { display: grid; gap: 12px; grid-template-columns: 1fr; margin-top: 10px; align-items: start; }
+@media (min-width: 600px) { .cards { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 960px) { .cards { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 1240px) { .cards { grid-template-columns: repeat(4, 1fr); } }
+.doneHead { font-size: 15px; margin: 28px 0 0; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; font-size: 13px; }
+.card.isDone { opacity: .6; }
+.card.isDone:hover { opacity: 1; }
 .card .preview { position: relative; background: #111; }
 .card .preview img { display: block; width: 100%; height: auto; }
+.corner-l { position: absolute; top: 6px; left: 6px; }
+.corner-r { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; }
 .badge {
-  position: absolute; top: 8px; left: 8px; font-size: 12px; font-weight: 700; padding: 2px 8px;
+  font-size: 11px; font-weight: 700; padding: 2px 6px;
   border-radius: 3px; background: rgba(0,0,0,.65); color: #fff;
 }
-.badge.ai { background: var(--ok); }
-.card .body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-.card .meta { font-size: 13px; color: var(--muted); }
+
+/* 圖示按鈕：圖卡上是深色半透明，表單旁是淡色 */
+.iconBtn {
+  width: 32px; height: 32px; min-height: 0; padding: 0; flex: none;
+  display: inline-grid; place-items: center; cursor: pointer;
+  border: 0; border-radius: 3px; background: rgba(0,0,0,.55); color: #fff;
+}
+.iconBtn:hover, .iconBtn.on { background: rgba(0,0,0,.8); }
+.iconBtn.plain { background: var(--bg); color: var(--text); border: 1px solid var(--line); }
+.iconBtn.plain:hover { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.iconBtn svg, .doneBox svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.doneBox {
+  width: 28px; height: 28px; display: grid; place-items: center; cursor: pointer;
+  border: 2px solid #fff; border-radius: 3px; background: rgba(0,0,0,.45); color: transparent;
+}
+.doneBox input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.doneBox:has(input:checked) { background: var(--ok); border-color: var(--ok); color: #fff; }
+.doneBox:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.card .body { padding: 10px; display: flex; flex-direction: column; gap: 4px; }
+.card .meta { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
 .card .meta a { color: inherit; }
-fieldset { border: 1px solid var(--line); border-radius: 3px; padding: 8px 10px 10px; margin: 0; display: flex; flex-direction: column; gap: 6px; }
-legend { font-size: 13px; font-weight: 700; padding: 0 4px; display: flex; gap: 8px; align-items: center; }
-.link { word-break: break-all; }
+.card input, .card textarea { padding: 5px 8px; font-size: 13px; }
+.fieldLabel { font-size: 12px; font-weight: 700; color: var(--muted); margin-top: 4px; }
+.frow { display: flex; gap: 6px; align-items: flex-start; }
+.frow > textarea, .frow > .grow { flex: 1; min-width: 0; }
+.frow .inline { flex: 1; font-size: 12px; }
+.editor { display: flex; flex-direction: column; gap: 4px; padding: 8px; margin-bottom: 4px; border: 1px dashed var(--line); border-radius: 3px; }
+.link { word-break: break-all; font-size: 11px; margin-top: 2px; }
+.saveState { font-size: 11px; text-align: right; min-height: 1em; }
 
 .ed h2 { flex: 1; }
 .status { font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 3px; background: var(--bg); white-space: nowrap; }
