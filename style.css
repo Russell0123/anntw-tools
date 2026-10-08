@@ -111,9 +111,10 @@ main:has(#tab-news:not([hidden])) { max-width: 1600px; }
 .corner-l { position: absolute; top: 6px; left: 6px; }
 .corner-r { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; }
 .badge {
-  font-size: 11px; font-weight: 700; padding: 2px 6px;
-  border-radius: 3px; background: rgba(0,0,0,.65); color: #fff;
+  font-size: 11px; font-weight: 700; padding: 2px 6px; min-height: 0;
+  border: 0; border-radius: 3px; background: rgba(0,0,0,.65); color: #fff; cursor: pointer;
 }
+.badge:hover { background: rgba(0,0,0,.85); text-decoration: underline; }
 
 /* 圖示按鈕：圖卡上是深色半透明，表單旁是淡色 */
 .iconBtn {

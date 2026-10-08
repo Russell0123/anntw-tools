@@ -128,6 +128,11 @@ async function loadStatus() {
 
 // ---------- 新聞圖卡 ----------
 
+/** 這張卡已經有文案了（AI 給的、手動改成待發文、或自己打了社群標題／留言） */
+function hasCopy(d) {
+  return !!(d.ai || d.manual || d.edit?.social?.length || d.edit?.comment);
+}
+
 function cardValues(d) {
   return {
     title_lines: defaultSplit(d.title),
@@ -148,10 +153,15 @@ const ICON = {
 
 /** 已完成的卡片放在最下面的「已完成」區 */
 function placeCard(item) {
-  $(item.data.done ? '#newsDone' : '#newsList').append(item.el);
+  const target = $(item.data.done ? '#newsDone' : '#newsList');
+  if (item.el.parentElement !== target) {
+    // 依上稿時間（新→舊）插到正確位置，避免卡片跳到最後面
+    const after = [...target.children].find((c) => c.item && c.item.data.published_at < item.data.published_at);
+    target.insertBefore(item.el, after || null);
+  }
   const todo = state.news.filter((n) => !n.data.done).length;
   const done = state.news.length - todo;
-  $('#newsCount').textContent = `${state.news.length} 篇：待發 ${todo}、已完成 ${done}，${state.news.filter((n) => n.data.ai).length} 篇已有 AI 文案`;
+  $('#newsCount').textContent = `${state.news.length} 篇：待發 ${todo}、已完成 ${done}，${state.news.filter((n) => hasCopy(n.data)).length} 篇已有文案`;
   $('#doneHead').hidden = done === 0;
   $('#doneHead').textContent = `已完成（${done}）`;
 }
@@ -175,6 +185,7 @@ async function loadNews(onProgress = () => {}) {
   if (!state.news.length) list.innerHTML = '<p class="muted">這一天還沒有抓到已上稿的文章。</p>';
   for (const item of state.news) {
     item.el = renderCard(item, date);
+    item.el.item = item;
     placeCard(item);
   }
   updateAiHint();
@@ -205,10 +216,10 @@ function renderCard(item, date) {
   $('.link', el).textContent = d.url;
   $('.meta', el).innerHTML = `${esc(d.category)}・${esc(d.author)}・${fmtTime(d.published_at)}・<a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.slug)}</a>`;
 
-  // 左上角：AI 處理前顯示「待 AI」，處理後變成「已完成」勾選框
+  // 左上角：還沒有文案時顯示「待 AI」（可點一下改成自己寫），有文案後變成「待發文／已完成」勾選框
   const badge = $('.badge', el), doneBox = $('.doneBox', el), doneChk = $('.doneChk', el);
   const setCorner = () => {
-    const ready = !!(d.ai || d.edit);
+    const ready = hasCopy(d);
     badge.hidden = ready;
     doneBox.hidden = !ready;
     doneChk.checked = !!d.done;
@@ -261,7 +272,7 @@ function renderCard(item, date) {
     saveState.textContent = '有未儲存的修改';
     if (needRedraw) { clearTimeout(redrawTimer); redrawTimer = setTimeout(redraw, 250); }
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => { collectEdit(); setCorner(); persist('圖卡修改').catch(() => {}); }, 2000);
+    saveTimer = setTimeout(() => { collectEdit(); setCorner(); updateAiHint(); persist('圖卡修改').catch(() => {}); }, 2000);
   };
   [t1, t2, sz].forEach((i) => i.addEventListener('input', () => { $('output', el).textContent = `${sz.value}%`; changed(true); }));
   [social, comment].forEach((i) => i.addEventListener('input', () => changed(false)));
@@ -323,6 +334,15 @@ function renderCard(item, date) {
   });
   $('.cpSocial', el).addEventListener('click', () => copyText(social.value.trim()));
   $('.cpComment', el).addEventListener('click', () => copyText(`${comment.value.trim()}\n${d.url}`));
+
+  badge.addEventListener('click', async () => {
+    d.manual = true;
+    setCorner();
+    placeCard(item);
+    updateAiHint();
+    social.focus();
+    await persist('改為手動文案').catch(() => {});
+  });
 
   doneChk.addEventListener('change', async () => {
     d.done = doneChk.checked;
@@ -483,7 +503,7 @@ function renderEd(item) {
 
 function pendingWork() {
   return {
-    news: state.news.filter((n) => !n.data.ai).map((n) => n.data),
+    news: state.news.filter((n) => !hasCopy(n.data)).map((n) => n.data), // 自己寫文案的不送給 AI
     editorial: state.eds.filter((e) => e.data.status === 'pending').map((e) => e.data),
   };
 }
