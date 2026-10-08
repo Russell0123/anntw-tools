@@ -188,6 +188,7 @@ function renderCard(item, date) {
   const canvas = document.createElement('canvas');
   let image = null;
 
+  $('.cpImg', el).innerHTML = ICON.copy;
   $('.dl', el).innerHTML = ICON.download;
   $('.edit', el).innerHTML = ICON.edit;
   $$('.copy', el).forEach((b) => { b.innerHTML = ICON.copy; });
@@ -305,6 +306,20 @@ function renderCard(item, date) {
   $('.dl', el).addEventListener('click', async () => {
     await redraw();
     download(`${date}_${d.slug}.jpg`, await canvasToBlob(canvas));
+  });
+  $('.cpImg', el).addEventListener('click', async () => {
+    // 剪貼簿只收 PNG；把 Promise 直接交給 ClipboardItem，Safari 才會接受（需在點擊當下建立）
+    if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+      toast('這個瀏覽器不支援複製圖片，請改用下載，手機可長按圖片儲存', 5000);
+      return;
+    }
+    try {
+      const png = redraw().then(() => new Promise((res) => canvas.toBlob(res, 'image/png')));
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+      toast('圖卡已複製，可以直接貼到臉書');
+    } catch (err) {
+      toast(`複製圖片失敗：${err.message}`, 5000);
+    }
   });
   $('.cpSocial', el).addEventListener('click', () => copyText(social.value.trim()));
   $('.cpComment', el).addEventListener('click', () => copyText(`${comment.value.trim()}\n${d.url}`));
