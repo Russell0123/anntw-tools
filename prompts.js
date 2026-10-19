@@ -22,6 +22,14 @@ const NEWS_RULES = `## 任務 A：新聞社群文案（news）
      - 孤獨竟跟吸菸一樣傷身？／教會社區陪伴成解方關鍵
 3. **comment**：臉書第一則留言用的一句短話＋1 個 emoji（例如結尾放 💪🤔😱🧐），4～12 字，像小編跟讀者聊天。
    不要放連結（系統會自動接上原文連結）。範例：連假交通都要提早準備！／重視女性權益💪／需要與時俱進🧐／最後會由誰來辦呢🤔／越來越危險😱／健康的人際關係很重要💪
+
+**資料裡 type 為 "daily" 的是「每日社論」，規則不同：**
+
+- **title_lines**：原標題開頭的「（社論）」要改成「社論／」，並且固定放在第一行開頭，其餘照原標題文字斷成兩行、不可改字。
+  例：原標題「（社論）從川習一年三會到兩岸老死不相往來」→ ["社論／從川習一年三會", "到兩岸老死不相往來"]
+- **social**：不寫提問句。從社論內文中**原封不動**摘出一段最有力、最能引人想讀下去的精華句（1～2 句，約 30～80 字）作為 hook，
+  不可改寫、不可增刪字，陣列只放這一個元素。
+- **comment**：規則同上（一句短話＋1 個 emoji）。
 `;
 
 const EDITORIAL_RULES = `## 任務 B：我見我思格式整理＋錯字檢查（editorial）
@@ -76,7 +84,7 @@ function deliverySpec(id) {
 export function buildPackage({ id, news, editorial }) {
   const data = {
     package_id: id,
-    news: news.map((n) => ({ slug: n.slug, title: n.title, category: n.category, body: n.body })),
+    news: news.map((n) => ({ slug: n.slug, type: n.collection || 'news', title: n.title, category: n.category, body: n.body })),
     editorial: editorial.map((e) => ({ slug: e.slug, title: e.title, body: e.body })),
   };
   return `# 台灣醒報 處理包 ${id}

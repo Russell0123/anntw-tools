@@ -1,5 +1,5 @@
 import { GitHubStore, LocalStore } from './store.js';
-import { drawCard, canvasToBlob, defaultSplit } from './card.js';
+import { drawCard, canvasToBlob, defaultSplit, cardTitle } from './card.js';
 import { progress, trackRun } from './progress.js';
 import {
   buildPackage, parseDelivery, formatBody, checkPreserved, headingProblems,
@@ -16,7 +16,7 @@ const fmtTime = (iso) => iso ? new Date(iso).toLocaleString('zh-TW', { timeZone:
 const SETTINGS_KEY = 'anntw-tools-settings';
 const LOCAL = new URLSearchParams(location.search).has('local');
 
-const state = { store: null, news: [], eds: [] };
+const state = { store: null, news: [], eds: [], followToday: true };
 
 // ---------- 共用 ----------
 
@@ -135,7 +135,7 @@ function hasCopy(d) {
 
 function cardValues(d) {
   return {
-    title_lines: defaultSplit(d.title),
+    title_lines: defaultSplit(cardTitle(d)),
     social: ['', ''],
     comment: '',
     scale: [1, 1],
@@ -549,9 +549,15 @@ async function importDelivery(text) {
     if (!cur) { notes.push(`找不到新聞 ${n.slug}`); continue; }
     const card = cur.data;
     let lines = (n.title_lines || []).map((s) => String(s).trim());
-    if (lines.join('').replace(/\s/g, '') !== card.title.replace(/\s/g, '')) {
+    if (lines.join('').replace(/\s/g, '') !== cardTitle(card).replace(/\s/g, '')) {
       notes.push(`${n.slug} 的標題斷行改到了原文字，已改用預設斷行`);
-      lines = defaultSplit(card.title);
+      lines = defaultSplit(cardTitle(card));
+    }
+    if (card.collection === 'daily') {
+      // 社論的 hook 必須是內文原句
+      const plain = (x) => String(x).replace(/\*\*|\[|\]\([^)]*\)|^##/gm, '').replace(/[\s　]/g, '');
+      const hook = (n.social || []).join('');
+      if (hook && !plain(card.body).includes(plain(hook))) notes.push(`${n.slug} 社論的 hook 不是內文原句，請檢查`);
     }
     card.ai = { title_lines: lines, social: (n.social || []).map(String), comment: String(n.comment || ''), at: new Date().toISOString() };
     await state.store.putJSON(path, card, cur.sha, `AI 文案 ${n.slug}`);
@@ -572,6 +578,7 @@ async function importDelivery(text) {
   }
 
   if (date !== $('#newsDate').value) $('#newsDate').value = date;
+  state.followToday = date === todayTW();
   await reloadAll({ label: '匯入完成，重新載入', silent: true });
   progress.done(`已匯入 ${okNews} 篇新聞、${okEd} 篇我見我思`);
   if (notes.length) toast(notes.join('；'), 9000);
@@ -601,9 +608,19 @@ async function runFetch() {
 
 // ---------- 啟動 ----------
 
+/** 跟著今天的模式下，日期過了午夜就換成新的一天並重新載入。回傳是否有換日。 */
+function syncToday() {
+  const today = todayTW();
+  if (!state.followToday || $('#newsDate').value === today) return false;
+  $('#newsDate').value = today;
+  if (state.store) reloadAll({ label: '已換日，載入今天的文章' });
+  return true;
+}
+
 /** silent：由其他流程呼叫時，接續原本的進度條，不在最後顯示「完成」 */
 async function reloadAll({ label = '重新整理', silent = false } = {}) {
   if (!state.store) return;
+  if (state.followToday) $('#newsDate').value = todayTW();
   if (!silent) progress.start(`${label}：讀取抓取狀態…`);
   else progress.set(0.96, `${label}…`, 0.99);
   try {
@@ -621,8 +638,14 @@ async function reloadAll({ label = '重新整理', silent = false } = {}) {
 function init() {
   initSettings();
   $$('.tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  // 日期預設跟著「今天」走：跨過午夜、切回分頁時自動換日；手動選過別的日期就不動
   $('#newsDate').value = todayTW();
-  $('#newsDate').addEventListener('change', () => loadNews().then(updateAiHint));
+  $('#newsDate').addEventListener('change', () => {
+    state.followToday = $('#newsDate').value === todayTW();
+    loadNews().then(updateAiHint);
+  });
+  setInterval(syncToday, 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) syncToday(); });
   // 大圖預覽：點圖片以外的地方或按 Esc 收回
   $('#lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') closeLightbox(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeLightbox(); });

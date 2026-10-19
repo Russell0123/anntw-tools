@@ -33,8 +33,25 @@ const EDITORIAL = (() => {
   };
 })();
 
+// 每日社論：同灰色範本的字型、顏色、字級，但圖片比例較寬（依範例圖量測：左邊距 6.4%、字級約寬度 6.3%）
+const DAILY = (() => {
+  const W = 1600, H = 1025, size = 101, top = 654;
+  return {
+    W, H,
+    lines: [
+      { x: 103, top, size, weight: 900, color: '#BFBFBF' },
+      { x: 103, top: top + size * LINE, size, weight: 900, color: '#BFBFBF' },
+    ],
+  };
+})();
+
 export function layoutFor(collection) {
-  return collection === 'editorial' ? EDITORIAL : NEWS;
+  return collection === 'daily' ? DAILY : collection === 'editorial' ? EDITORIAL : NEWS;
+}
+
+/** 圖卡上顯示的標題：社論的「（社論）」開頭改成「社論／」 */
+export function cardTitle(d) {
+  return d.collection === 'daily' ? d.title.trim().replace(/^[（(]社論[）)]\s*/, '社論／') : d.title.trim();
 }
 
 export async function ensureFonts(text) {
@@ -94,6 +111,10 @@ export function canvasToBlob(canvas) {
 /** 預設的標題斷行：有空格就從空格斷，《專欄名》就從》後斷，否則從中間附近的標點斷 */
 export function defaultSplit(title) {
   const t = title.trim();
+  if (t.startsWith('社論／')) {
+    const [a, b] = defaultSplit(t.slice(3)); // 「社論／」固定在第一行開頭
+    return b ? ['社論／' + a, b] : ['社論／', a];
+  }
   const sp = t.search(/[ 　]/);
   if (sp > 0) return [t.slice(0, sp).trim(), t.slice(sp + 1).trim()];
   const col = t.indexOf('》');
